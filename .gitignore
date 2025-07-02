@@ -1,3 +1,6 @@
-# Ignore all PDF files and the pdfs folder to avoid committing sensitive documents
-pdfs/
-*.pdf 
+# Ignore all PDF files anywhere
+*.pdf
+
+# Keep pdfs folder structure but ignore its contents
+pdfs/*
+!pdfs/.gitkeep 
