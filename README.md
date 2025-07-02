@@ -19,7 +19,8 @@ A Python script that extracts data from multiple PDF files and exports the resul
 
 ## Installation
 
-1. Install the required dependencies:
+The converter will **auto-install** anything listed in `requirements.txt` the first time you run it.  
+If you prefer to pre-install manually:
 ```bash
 pip install -r requirements.txt
 ```
@@ -81,12 +82,13 @@ The generated Excel file contains four sheets:
 - File size
 - Processing status
 
-### 2. Line Items Sheet (NEW!)
-- Filename and source page
-- Item description/name
-- Amount/price
-- Quantity (if available)
-- Unit price (if available)
+### 2. Line Items Sheet
+- Filename
+- Description
+- Quantity
+- Unit Price
+- VAT
+- Amount
 - Source of extraction (table or text parsing)
 
 ### 3. Text Data Sheet
