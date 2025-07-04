@@ -1,6 +1,6 @@
 @echo off
-echo PDF Invoice Converter - Web Application
-echo ========================================
+echo PDF Invoice Converter - Desktop Application
+echo ===========================================
 
 :: Check if Python is installed
 python --version >nul 2>&1
@@ -15,17 +15,17 @@ if errorlevel 1 (
 echo Installing dependencies...
 pip install -r requirements.txt
 
-:: Run the web application
+:: Run the desktop application
 echo.
-echo Starting web application...
-echo You can access it at: http://localhost:5000
+echo Starting desktop application...
+echo This will open in your default web browser
 echo Default login: admin / admin123
 echo.
-echo Press Ctrl+C to stop the server
+echo Press Ctrl+C to stop the application
 echo.
 
-cd webapp
-python run_webapp.py
+cd desktop_app
+python run_app.py
 
 echo.
 echo Press any key to exit...
