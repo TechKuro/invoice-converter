@@ -194,10 +194,20 @@ def show_sidebar():
             "⚙️ Settings": "⚙️"
         }
         
+        # Check for query parameter navigation
+        query_page = st.query_params.get("page", None)
+        default_index = 0
+        if query_page == "upload":
+            default_index = 1
+            # Clear the query parameter after using it
+            if "page" in st.query_params:
+                del st.query_params["page"]
+        
         page = st.selectbox(
             "🧭 Navigate to:",
             list(pages.keys()),
             key="navigation",
+            index=default_index,
             format_func=lambda x: x
         )
         
@@ -300,7 +310,7 @@ def show_dashboard():
     else:
         st.info("No processing sessions yet. Upload some PDFs to get started!")
         if st.button("📤 Upload PDFs", type="primary"):
-            st.session_state.navigation = "📤 Upload PDFs"
+            st.query_params.page = "upload"
             st.rerun()
 
 def format_status(status):
@@ -316,6 +326,47 @@ def format_status(status):
 def show_upload_page():
     """Display enhanced file upload page"""
     st.markdown('<div class="main-header"><h1>📤 Upload PDF Files</h1></div>', unsafe_allow_html=True)
+    
+    # Initialize processing session state
+    if 'processing_session' not in st.session_state:
+        st.session_state.processing_session = {
+            'is_processing': False,
+            'completed': False,
+            'results': None,
+            'error': None,
+            'uploaded_files': None,
+            'has_files': False
+        }
+    
+    # Debug: Show current session state (remove this later)
+    with st.expander("🔍 Debug Info", expanded=False):
+        debug_info = dict(st.session_state.processing_session)
+        # Show file count instead of file objects for readability
+        if debug_info.get('uploaded_files'):
+            debug_info['uploaded_files'] = f"{len(debug_info['uploaded_files'])} files uploaded"
+        st.json(debug_info)
+    
+    # Check if we have a completed processing session to show results
+    if st.session_state.processing_session['completed']:
+        show_processing_results()
+        
+        # Reset button to start new session
+        if st.button("🔄 Process New Files", type="primary"):
+            st.session_state.processing_session = {
+                'is_processing': False,
+                'completed': False,
+                'results': None,
+                'error': None,
+                'uploaded_files': None,
+                'has_files': False
+            }
+            st.rerun()
+        return
+    
+    # Show processing status if currently processing
+    if st.session_state.processing_session['is_processing']:
+        st.info("⏳ Processing in progress... Please wait.")
+        st.stop()
     
     # Instructions and tips
     with st.expander("📖 How to Use", expanded=False):
@@ -356,13 +407,21 @@ def show_upload_page():
         help="Select one or more PDF files to process. Maximum file size: 50MB each."
     )
     
+    # Store uploaded files in session state for persistence
     if uploaded_files:
-        st.success(f"✅ Selected {len(uploaded_files)} file(s)")
+        st.session_state.processing_session['uploaded_files'] = uploaded_files
+        st.session_state.processing_session['has_files'] = True
+    
+    # Use stored files if available, otherwise use current upload
+    current_files = st.session_state.processing_session.get('uploaded_files', uploaded_files)
+    
+    if current_files and st.session_state.processing_session.get('has_files', False):
+        st.success(f"✅ Selected {len(current_files)} file(s)")
         
         # Show file details in a nice table
         file_data = []
         total_size = 0
-        for file in uploaded_files:
+        for file in current_files:
             size_mb = file.size / (1024 * 1024)
             total_size += size_mb
             file_data.append({
@@ -377,11 +436,11 @@ def show_upload_page():
         # File statistics
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Files", len(uploaded_files))
+            st.metric("Total Files", len(current_files))
         with col2:
             st.metric("Total Size", f"{total_size:.1f} MB")
         with col3:
-            estimated_time = len(uploaded_files) * 2  # Rough estimate: 2 seconds per file
+            estimated_time = len(current_files) * 2  # Rough estimate: 2 seconds per file
             st.metric("Est. Time", f"{estimated_time}s")
         
         st.markdown("---")
@@ -391,160 +450,237 @@ def show_upload_page():
         
         with col2:
             if st.button("🚀 Process Files", type="primary", use_container_width=True):
-                process_uploaded_files(uploaded_files, extract_tables, extract_text, verbose_logging, auto_download)
+                st.session_state.processing_session['is_processing'] = True
+                st.success("🚀 Starting processing...")
+                try:
+                    with st.spinner("Processing files..."):
+                        result = process_uploaded_files(current_files, extract_tables, extract_text, verbose_logging, auto_download)
+                    st.session_state.processing_session['results'] = result
+                    st.session_state.processing_session['completed'] = True
+                    st.success(f"✅ Processing completed! Processed {result.get('processed_count', 0)} files.")
+                except Exception as e:
+                    st.session_state.processing_session['error'] = str(e)
+                    st.session_state.processing_session['completed'] = True
+                    st.error(f"❌ Processing failed: {str(e)}")
+                finally:
+                    st.session_state.processing_session['is_processing'] = False
+                st.rerun()
         
         with col3:
             if st.button("🗑️ Clear Files", type="secondary", use_container_width=True):
+                # Clear the stored files
+                st.session_state.processing_session['uploaded_files'] = None
+                st.session_state.processing_session['has_files'] = False
                 st.rerun()
     
     else:
-        # Show upload tips when no files are selected
-        st.markdown("""
-        <div class="upload-info">
-            <h4>🎯 Ready to Process PDFs!</h4>
-            <p>Select your PDF files above to get started. The system works best with:</p>
-            <ul>
-                <li>📄 Invoice and receipt PDFs</li>
-                <li>📊 Documents with clear table structures</li>
-                <li>📝 Text-based PDFs (not scanned images)</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
+        # Show upload tips when no files are selected or stored
+        if not st.session_state.processing_session.get('has_files', False):
+            st.markdown("""
+            <div class="upload-info">
+                <h4>🎯 Ready to Process PDFs!</h4>
+                <p>Select your PDF files above to get started. The system works best with:</p>
+                <ul>
+                    <li>📄 Invoice and receipt PDFs</li>
+                    <li>📊 Documents with clear table structures</li>
+                    <li>📝 Text-based PDFs (not scanned images)</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
 
-def process_uploaded_files(uploaded_files, extract_tables=True, extract_text=True, verbose_logging=False, auto_download=True):
-    """Process uploaded PDF files"""
-    # Create upload session
-    session_id = str(uuid.uuid4())
+def show_processing_results():
+    """Display processing results"""
+    if st.session_state.processing_session['error']:
+        st.error(f"❌ Processing failed: {st.session_state.processing_session['error']}")
+        return
     
-    conn = sqlite3.connect('pdf_converter.db')
-    cursor = conn.cursor()
+    results = st.session_state.processing_session['results']
+    if not results:
+        st.error("❌ No results available")
+        return
     
-    # Insert upload session
-    cursor.execute("""
-        INSERT INTO upload_session (session_id, user_id, status, created_at, total_files, processed_files)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (session_id, st.session_state.user_id, 'processing', datetime.now(), len(uploaded_files), 0))
+    st.success(f"✅ Processing completed successfully!")
     
-    session_db_id = cursor.lastrowid
+    # Show results summary
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Files Processed", results.get('processed_count', 0))
+    with col2:
+        st.metric("Total Files", results.get('total_files', 0))
+    with col3:
+        st.metric("Success Rate", f"{(results.get('processed_count', 0) / max(results.get('total_files', 1), 1) * 100):.1f}%")
     
-    # Create uploads directory
-    upload_dir = Path(f"uploads/{session_id}")
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    # Initialize extractor and exporter with user options
-    extractor = PDFDataExtractor(extract_tables=extract_tables, extract_text=extract_text)
-    exporter = ExcelExporter()
-    all_data = []
-    
-    processed_count = 0
-    
-    for i, uploaded_file in enumerate(uploaded_files):
-        status_text.text(f"Processing {uploaded_file.name}...")
-        
-        # Save uploaded file
-        file_path = upload_dir / uploaded_file.name
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        # Insert processed file record
-        cursor.execute("""
-            INSERT INTO processed_file (upload_session_id, filename, file_path, status)
-            VALUES (?, ?, ?, ?)
-        """, (session_db_id, uploaded_file.name, str(file_path), 'processing'))
-        
-        file_db_id = cursor.lastrowid
-        
-        try:
-            # Extract data from PDF
-            extracted_data = extractor.extract_from_pdf(file_path)
-            all_data.append(extracted_data)
-            
-            # Update processed file status
-            cursor.execute("""
-                UPDATE processed_file 
-                SET status = ?, num_pages = ?, num_tables = ?, num_line_items = ?, processed_at = ?
-                WHERE id = ?
-            """, (
-                'completed',
-                extracted_data.get('metadata', {}).get('pages', 0),
-                len(extracted_data.get('tables', [])),
-                len(extracted_data.get('line_items', [])),
-                datetime.now(),
-                file_db_id
-            ))
-            
-            # Store line items
-            for item in extracted_data.get('line_items', []):
-                cursor.execute("""
-                    INSERT INTO line_item 
-                    (processed_file_id, description, quantity, unit_price, amount, vat_rate, source, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    file_db_id,
-                    item.get('description', ''),
-                    item.get('quantity'),
-                    item.get('unit_price'),
-                    item.get('amount'),
-                    item.get('vat_rate'),
-                    item.get('source', 'unknown'),
-                    datetime.now()
-                ))
-            
-            processed_count += 1
-            
-        except Exception as e:
-            # Update with error status
-            cursor.execute("""
-                UPDATE processed_file 
-                SET status = ?, error_message = ?
-                WHERE id = ?
-            """, ('failed', str(e), file_db_id))
-        
-        # Update progress
-        progress_bar.progress((i + 1) / len(uploaded_files))
-        cursor.execute("""
-            UPDATE upload_session 
-            SET processed_files = ?
-            WHERE id = ?
-        """, (processed_count, session_db_id))
-        conn.commit()
-    
-    # Generate Excel file
-    if all_data:
-        output_filename = f"results_{session_id}.xlsx"
-        output_path = upload_dir / output_filename
-        exporter.export_to_excel(all_data, output_path)
-        
-        cursor.execute("""
-            UPDATE upload_session 
-            SET status = ?, completed_at = ?, output_file = ?
-            WHERE id = ?
-        """, ('completed', datetime.now(), str(output_path), session_db_id))
-    else:
-        cursor.execute("""
-            UPDATE upload_session 
-            SET status = ?
-            WHERE id = ?
-        """, ('failed', session_db_id))
-    
-    conn.commit()
-    conn.close()
-    
-    status_text.text("Processing completed!")
-    st.success(f"Successfully processed {processed_count}/{len(uploaded_files)} files!")
-    
-    if all_data:
-        # Provide download button
-        with open(output_path, "rb") as file:
+    # Show download button
+    if results.get('output_file') and Path(results['output_file']).exists():
+        with open(results['output_file'], "rb") as file:
             st.download_button(
                 label="📥 Download Results (Excel)",
                 data=file.read(),
-                file_name=output_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                file_name=f"results_{results.get('session_id', 'unknown')[:8]}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                use_container_width=True
             )
+    else:
+        st.warning("⚠️ Output file not found")
+
+def process_uploaded_files(uploaded_files, extract_tables=True, extract_text=True, verbose_logging=False, auto_download=True):
+    """Process uploaded PDF files and return results"""
+    # Create upload session
+    session_id = str(uuid.uuid4())
+    
+    try:
+        conn = sqlite3.connect('pdf_converter.db')
+        cursor = conn.cursor()
+        
+        # Insert upload session
+        cursor.execute("""
+            INSERT INTO upload_session (session_id, user_id, status, created_at, total_files, processed_files)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (session_id, st.session_state.user_id, 'processing', datetime.now(), len(uploaded_files), 0))
+        
+        session_db_id = cursor.lastrowid
+        
+        # Create uploads directory
+        upload_dir = Path(f"uploads/{session_id}")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Show progress indicators
+        progress_container = st.container()
+        with progress_container:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+        
+        # Initialize extractor and exporter with user options
+        extractor = PDFDataExtractor(extract_tables=extract_tables, extract_text=extract_text)
+        exporter = ExcelExporter()
+        all_data = []
+        
+        processed_count = 0
+        
+        # Process each file
+        for i, uploaded_file in enumerate(uploaded_files):
+            status_text.text(f"Processing {uploaded_file.name}...")
+            
+            # Save uploaded file
+            file_path = upload_dir / uploaded_file.name
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            
+            # Insert processed file record
+            cursor.execute("""
+                INSERT INTO processed_file (upload_session_id, filename, file_path, status)
+                VALUES (?, ?, ?, ?)
+            """, (session_db_id, uploaded_file.name, str(file_path), 'processing'))
+            
+            file_db_id = cursor.lastrowid
+            
+            try:
+                # Extract data from PDF
+                extracted_data = extractor.extract_from_pdf(file_path)
+                all_data.append(extracted_data)
+                
+                # Update processed file status
+                cursor.execute("""
+                    UPDATE processed_file 
+                    SET status = ?, num_pages = ?, num_tables = ?, num_line_items = ?, processed_at = ?
+                    WHERE id = ?
+                """, (
+                    'completed',
+                    extracted_data.get('metadata', {}).get('pages', 0),
+                    len(extracted_data.get('tables', [])),
+                    len(extracted_data.get('line_items', [])),
+                    datetime.now(),
+                    file_db_id
+                ))
+                
+                # Store line items
+                for item in extracted_data.get('line_items', []):
+                    cursor.execute("""
+                        INSERT INTO line_item 
+                        (processed_file_id, description, quantity, unit_price, amount, vat_rate, source, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        file_db_id,
+                        item.get('description', ''),
+                        item.get('quantity'),
+                        item.get('unit_price'),
+                        item.get('amount'),
+                        item.get('vat_rate'),
+                        item.get('source', 'unknown'),
+                        datetime.now()
+                    ))
+                
+                processed_count += 1
+                
+            except Exception as e:
+                # Update with error status
+                cursor.execute("""
+                    UPDATE processed_file 
+                    SET status = ?, error_message = ?
+                    WHERE id = ?
+                """, ('failed', str(e), file_db_id))
+            
+            # Update progress
+            progress_bar.progress((i + 1) / len(uploaded_files))
+            cursor.execute("""
+                UPDATE upload_session 
+                SET processed_files = ?
+                WHERE id = ?
+            """, (processed_count, session_db_id))
+            conn.commit()
+        
+        # Generate Excel file after processing all files
+        output_path = None
+        if all_data:
+            output_filename = f"results_{session_id}.xlsx"
+            output_path = upload_dir / output_filename
+            exporter.export_to_excel(all_data, output_path)
+            
+            cursor.execute("""
+                UPDATE upload_session 
+                SET status = ?, completed_at = ?, output_file = ?
+                WHERE id = ?
+            """, ('completed', datetime.now(), str(output_path), session_db_id))
+        else:
+            cursor.execute("""
+                UPDATE upload_session 
+                SET status = ?
+                WHERE id = ?
+            """, ('failed', session_db_id))
+        
+        conn.commit()
+        conn.close()
+        
+        # Clear progress indicators
+        status_text.text("Processing completed!")
+        progress_bar.progress(1.0)
+        
+        # Return results
+        return {
+            'session_id': session_id,
+            'processed_count': processed_count,
+            'total_files': len(uploaded_files),
+            'output_file': str(output_path) if output_path else None,
+            'all_data': all_data
+        }
+        
+    except Exception as e:
+        # Handle any errors during processing
+        if 'conn' in locals():
+            try:
+                cursor.execute("""
+                    UPDATE upload_session 
+                    SET status = ?, error_message = ?
+                    WHERE id = ?
+                """, ('failed', str(e), session_db_id))
+                conn.commit()
+                conn.close()
+            except:
+                pass  # Database might be closed already
+        
+        # Re-raise the exception to be caught by the calling function
+        raise Exception(f"Processing failed: {str(e)}")
 
 def show_sessions_page():
     """Display user sessions page"""
@@ -749,6 +885,14 @@ def main():
     
     # Show sidebar and get selected page
     page = show_sidebar()
+    
+    # Check if we have an active or completed processing session
+    # This overrides normal navigation to keep user on upload page
+    if ('processing_session' in st.session_state and 
+        (st.session_state.processing_session.get('is_processing', False) or 
+         st.session_state.processing_session.get('completed', False))):
+        show_upload_page()
+        return
     
     # Route to appropriate page
     if page == "📊 Dashboard":

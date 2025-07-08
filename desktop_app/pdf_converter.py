@@ -35,109 +35,346 @@ class PDFDataExtractor:
         self.logger = logging.getLogger(__name__)
     
     def extract_from_pdf(self, pdf_path: Path) -> Dict[str, Any]:
-        """Extract data from a single PDF file."""
-        data = {
+        """
+        Extract data from a single PDF file.
+        
+        Args:
+            pdf_path: Path to the PDF file
+            
+        Returns:
+            Dictionary containing extracted data
+        """
+        extracted_data = {
             'filename': pdf_path.name,
+            'filepath': str(pdf_path),
             'text': '',
             'tables': [],
-            'line_items': [],
-            'metadata': {'pages': 0}
+            'metadata': {},
+            'extraction_date': datetime.now().isoformat()
         }
         
         try:
             with pdfplumber.open(pdf_path) as pdf:
-                data['metadata']['pages'] = len(pdf.pages)
+                # Extract metadata
+                if pdf.metadata:
+                    extracted_data['metadata'] = {
+                        'title': pdf.metadata.get('Title', ''),
+                        'author': pdf.metadata.get('Author', ''),
+                        'creator': pdf.metadata.get('Creator', ''),
+                        'creation_date': str(pdf.metadata.get('CreationDate', '')),
+                        'pages': len(pdf.pages)
+                    }
                 
-                if self.extract_text:
-                    text_parts = []
-                    for page in pdf.pages:
+                all_text = []
+                all_tables = []
+                
+                for page_num, page in enumerate(pdf.pages, 1):
+                    if self.extract_text:
                         page_text = page.extract_text()
                         if page_text:
-                            text_parts.append(page_text)
-                    data['text'] = '\n'.join(text_parts)
+                            all_text.append(f"Page {page_num}:\n{page_text}\n")
+                    
+                    if self.extract_tables:
+                        # Extract tables
+                        tables = []
+                        
+                        # First try default table extraction
+                        default_tables = page.extract_tables()
+                        if default_tables:
+                            for i, table in enumerate(default_tables):
+                                if table:  # Skip empty tables
+                                    tables.append(table)
+                                    all_tables.append({
+                                        'page': page_num,
+                                        'table_number': i + 1,
+                                        'data': table,
+                                        'rows': len(table),
+                                        'columns': len(table[0]) if table else 0
+                                    })
+                        
+                        # If no tables found with default method, try text-based detection
+                        if not tables:
+                            table_settings = {
+                                "vertical_strategy": "text",
+                                "horizontal_strategy": "text", 
+                                "intersection_tolerance": 5,
+                                "min_words_vertical": 1,
+                                "min_words_horizontal": 1
+                            }
+                            text_tables = page.extract_tables(table_settings)
+                            
+                            for i, table in enumerate(text_tables):
+                                if table and len(table) > 1:  # Skip empty or single-row tables
+                                    # Filter out mostly empty tables
+                                    meaningful_rows = 0
+                                    for row in table:
+                                        if row and any(cell and str(cell).strip() for cell in row):
+                                            meaningful_rows += 1
+                                    
+                                    if meaningful_rows >= 2:  # At least 2 meaningful rows
+                                        tables.append(table)
+                                        all_tables.append({
+                                            'page': page_num,
+                                            'table_number': i + 1,
+                                            'data': table,
+                                            'rows': len(table),
+                                            'columns': len(table[0]) if table else 0,
+                                            'detection_method': 'text-based'
+                                        })
                 
-                if self.extract_tables:
-                    for page_num, page in enumerate(pdf.pages):
-                        tables = page.extract_tables()
-                        for i, table in enumerate(tables or []):
-                            if table and len(table) > 1:
-                                data['tables'].append({
-                                    'page': page_num + 1,
-                                    'table_number': i + 1,
-                                    'data': table
-                                })
+                extracted_data['text'] = '\n'.join(all_text)
+                extracted_data['tables'] = all_tables
                 
-                # Simple line item extraction
-                for table_info in data['tables']:
-                    table_data = table_info['data']
-                    if len(table_data) > 1:
-                        for row in table_data[1:]:  # Skip header
-                            if row and len(row) > 0 and str(row[0]).strip():
-                                item = {
-                                    'description': str(row[0]).strip(),
-                                    'source': f"table_page_{table_info['page']}"
-                                }
-                                if len(row) > 1:
-                                    item['amount'] = str(row[1]).strip()
-                                data['line_items'].append(item)
-        
+                # Extract line items from tables and text
+                extracted_data['line_items'] = self._extract_line_items_from_data(all_tables, extracted_data['text'])
+                
+                # Debug info
+                self.logger.info(f"Extracted {len(all_tables)} tables and {len(extracted_data['line_items'])} line items from {pdf_path.name}")
+                
         except Exception as e:
             self.logger.error(f"Error extracting data from {pdf_path}: {str(e)}")
-            data['error'] = str(e)
+            extracted_data['error'] = str(e)
         
-        return data
+        return extracted_data
     
-    def _extract_line_items_from_tables(self, tables: List[Dict]) -> List[Dict[str, Any]]:
-        """Extract line items from detected tables."""
+    def _extract_line_items_from_data(self, tables: List[Dict], text: str) -> List[Dict[str, Any]]:
+        """Extract line items from tables and text data."""
         line_items = []
         
-        for table_info in tables:
-            table_data = table_info.get('data', [])
-            if not table_data or len(table_data) < 2:
+        # First try table extraction
+        if tables:
+            for table_info in tables:
+                items = self._extract_from_single_table(table_info)
+                line_items.extend(items)
+        
+        # If no line items found, try text parsing
+        if not line_items and text:
+            items = self._parse_text_for_line_items(text)
+            for item in items:
+                item['source'] = 'text_parsing'
+                normalized = self._normalize_line_item(item)
+                if normalized:
+                    line_items.append(normalized)
+        
+        return line_items
+    
+    def _extract_from_single_table(self, table_info: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract line items from a single table."""
+        line_items = []
+        
+        page = table_info['page']
+        table_number = table_info['table_number'] 
+        rows = table_info['data']
+        
+        if not rows or len(rows) < 2:
+            return line_items
+        
+        # Find headers - look in first few rows
+        headers = None
+        header_row_idx = None
+        
+        for i, row in enumerate(rows[:5]):
+            if self._looks_like_headers(row):
+                headers = [str(cell).strip().lower() if cell else f'column_{j}' for j, cell in enumerate(row)]
+                header_row_idx = i
+                break
+        
+        if not headers:
+            return line_items
+        
+        # Extract data rows after headers
+        for row_idx in range(header_row_idx + 1, len(rows)):
+            row = rows[row_idx]
+            
+            # Skip empty rows
+            if not any(cell and str(cell).strip() for cell in row):
                 continue
             
-            # Try to find header row
-            headers = []
-            data_start_row = 0
+            # Create line item dictionary
+            line_item = {
+                'page': page,
+                'table_number': table_number,
+                'row_number': row_idx
+            }
             
-            for i, row in enumerate(table_data):
-                if row and any(cell and str(cell).strip() for cell in row):
-                    row_text = ' '.join(str(cell).strip().lower() for cell in row if cell)
-                    if any(keyword in row_text for keyword in ['description', 'item', 'product', 'quantity', 'price', 'amount']):
-                        headers = [str(cell).strip() if cell else f'col_{j}' for j, cell in enumerate(row)]
-                        data_start_row = i + 1
+            # Map row data to headers
+            for col_idx, cell_value in enumerate(row):
+                if col_idx < len(headers) and cell_value:
+                    header = headers[col_idx]
+                    line_item[header] = str(cell_value).strip()
+            
+            # Basic validation - need at least 2 meaningful fields
+            meaningful_fields = [v for k, v in line_item.items() 
+                               if k not in ['page', 'table_number', 'row_number'] and v]
+            
+            if len(meaningful_fields) >= 2:
+                # Apply filters
+                if not self._is_total_row(line_item):
+                    # Normalize the line item
+                    normalized = self._normalize_line_item(line_item)
+                    if normalized:
+                        line_items.append(normalized)
+        
+        return line_items
+    
+    def _looks_like_headers(self, row: List[Any]) -> bool:
+        """Check if a row looks like table headers."""
+        if not row:
+            return False
+        
+        # Convert to strings and check for header-like words
+        text_cells = [str(cell).strip().lower() for cell in row if cell and str(cell).strip()]
+        
+        if len(text_cells) < 2:
+            return False
+        
+        # Look for common invoice table headers
+        header_indicators = [
+            'description', 'desc', 'item', 'product', 'service',
+            'quantity', 'qty', 'quantit', 'amount', 'price', 'rate',
+            'unit', 'total', 'vat', 'tax'
+        ]
+        
+        matches = 0
+        for cell in text_cells:
+            if any(indicator in cell for indicator in header_indicators):
+                matches += 1
+        
+        # Consider it headers if at least 2 cells contain header indicators
+        return matches >= 2
+    
+    def _normalize_line_item(self, line_item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Normalize a line item into standard fields."""
+        
+        normalized = {
+            'page': line_item.get('page'),
+            'table_number': line_item.get('table_number'),
+            'row_number': line_item.get('row_number')
+        }
+        
+        # Find description (longest meaningful text field)
+        description = ""
+        for key, value in line_item.items():
+            if key in ['page', 'table_number', 'row_number']:
+                continue
+            if isinstance(value, str) and len(value.strip()) > 5:
+                if 'description' in key or len(value) > len(description):
+                    description = value.strip()
+        
+        if not description or len(description) < 4:
+            return None
+        
+        # Extract trailing numeric fields embedded
+        import re
+        quantity = ""
+        unit_price = ""
+        vat = ""
+        
+        # Split description into tokens so we can look backwards
+        tokens = description.split()
+        cleaned_tokens = tokens.copy()
+        
+        # Walk from end, capturing VAT, unit price, quantity if present
+        while cleaned_tokens:
+            token = cleaned_tokens[-1]
+            if re.match(r'^\d{1,3}%$', token):
+                vat = token
+                cleaned_tokens.pop()
+                continue
+            if re.match(r'^\d+\.\d{2}$', token):
+                if not unit_price:
+                    unit_price = token
+                    cleaned_tokens.pop()
+                    continue
+                elif not quantity:  # second numeric => quantity (can be integer or decimal)
+                    quantity = token
+                    cleaned_tokens.pop()
+                    continue
+            if re.match(r'^\d+\.?\d*$', token):
+                if not quantity:
+                    quantity = token
+                    cleaned_tokens.pop()
+                    continue
+            # If token doesn't match any pattern, break
+            break
+        
+        description_clean = ' '.join(cleaned_tokens).strip()
+        
+        # Parse quantity from other columns if still missing
+        if not quantity:
+            for key, value in line_item.items():
+                if key in ['page', 'table_number', 'row_number']:
+                    continue
+                if 'qty' in key.lower() or 'quantit' in key.lower() or key.lower() == 'y':
+                    if isinstance(value, str) and value.strip().replace('.', '').isdigit():
+                        quantity = value.strip()
                         break
-            
-            # If no clear headers found, use first row as headers
-            if not headers and table_data:
-                headers = [f'col_{j}' for j in range(len(table_data[0]))]
-                data_start_row = 0
-            
-            # Extract data rows
-            for row in table_data[data_start_row:]:
-                if row and any(cell and str(cell).strip() for cell in row):
-                    # Create line item
-                    item = {}
-                    for j, cell in enumerate(row):
-                        if j < len(headers) and cell:
-                            header = headers[j].lower()
-                            cell_text = str(cell).strip()
-                            
-                            # Map common fields
-                            if any(keyword in header for keyword in ['desc', 'item', 'product', 'service']):
-                                item['description'] = cell_text
-                            elif any(keyword in header for keyword in ['qty', 'quantity']):
-                                item['quantity'] = self._extract_number(cell_text)
-                            elif any(keyword in header for keyword in ['price', 'rate', 'unit']):
-                                item['unit_price'] = self._extract_amount(cell_text)
-                            elif any(keyword in header for keyword in ['amount', 'total']):
-                                item['amount'] = self._extract_amount(cell_text)
-                    
-                    # Only add if we have a description and at least one numeric field
-                    if (item.get('description') and len(item.get('description', '')) > 3 and
-                        (item.get('quantity') or item.get('unit_price') or item.get('amount'))):
-                        item['source'] = f"table_page_{table_info['page']}"
-                        line_items.append(item)
+        
+        # Parse unit_price, amount, vat from other headers if present
+        amount = ""
+        for key, value in line_item.items():
+            if key in ['page', 'table_number', 'row_number']:
+                continue
+            value_str = str(value).strip()
+            key_lower = key.lower()
+            if not unit_price and ('price' in key_lower or 'unit' in key_lower):
+                if re.match(r'^\d+\.?\d*$', value_str):
+                    unit_price = value_str
+            elif not amount and ('amount' in key_lower or 'total' in key_lower):
+                if re.match(r'^\d+\.?\d*$', value_str):
+                    amount = value_str
+            elif not vat and ('vat' in key_lower or 'tax' in key_lower):
+                vat = value_str
+        
+        # If amount still missing but numeric in line_item['amount'] maybe captured earlier
+        if not amount and 'amount' in line_item:
+            amount = line_item['amount']
+        
+        # Validate that we have a proper line item (needs description and at least amount or unit_price)
+        if description_clean and (unit_price or amount):
+            normalized['description'] = description_clean
+            if quantity:
+                normalized['quantity'] = quantity
+            if unit_price:
+                normalized['unit_price'] = unit_price
+            if amount:
+                normalized['amount'] = amount
+            if vat:
+                normalized['vat'] = vat
+            return normalized
+        
+        return None
+    
+    def _parse_text_for_line_items(self, text: str) -> List[Dict[str, Any]]:
+        """Parse text to extract line items when tables are not available."""
+        line_items = []
+        
+        # Pattern to match lines that look like: "Description ... $amount"
+        # This is a fallback method for when tables aren't properly detected
+        line_pattern = r'(.{10,}?)\s+\$?([0-9,]+\.?\d{0,2})\s*$'
+        
+        lines = text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if len(line) < 15:  # Skip short lines
+                continue
+                
+            match = re.search(line_pattern, line)
+            if match:
+                description = match.group(1).strip()
+                amount = match.group(2)
+                
+                # Filter out lines that look like totals or headers
+                skip_patterns = ['total', 'subtotal', 'tax', 'discount', 'grand', 'due', 'balance', 'page']
+                if any(pattern in description.lower() for pattern in skip_patterns):
+                    continue
+                
+                if len(description) > 5:  # Reasonable description length
+                    line_items.append({
+                        'description': description,
+                        'amount': amount,
+                        'source': 'text_parsing'
+                    })
         
         return line_items
     
@@ -170,6 +407,100 @@ class PDFDataExtractor:
         # Remove currency symbols and extract number
         cleaned = re.sub(r'[£$€¥₹]', '', str(text))
         return self._extract_number(cleaned)
+    
+    def _is_total_row(self, row_data: Dict[str, Any]) -> bool:
+        """Check if a row represents a total/summary rather than a line item."""
+        
+        # Convert all values to strings for checking
+        text_values = []
+        for key, value in row_data.items():
+            if key not in ['page', 'table_number', 'row_number'] and value:
+                text_values.append(str(value).strip().upper())
+        
+        combined_text = ' '.join(text_values)
+        
+        # Check for total/summary indicators
+        total_indicators = [
+            'TOTAL', 'SUBTOTAL', 'SUB-TOTAL', 'GRAND TOTAL',
+            'VAT', 'TAX', 'NET', 'GROSS', 'BALANCE',
+            'AMOUNT DUE', 'INVOICE TOTAL', 'FINAL TOTAL',
+            'SHIPPING', 'DELIVERY', 'DISCOUNT',
+            'TOTA', 'OTAL',  # Partial matches for split text
+        ]
+        
+        # Check if any value contains total indicators
+        for indicator in total_indicators:
+            if indicator in combined_text:
+                return True
+        
+        # Check for rows with mostly empty fields or single words
+        meaningful_fields = [v for v in text_values if len(v) > 2]
+        if len(meaningful_fields) <= 1:
+            return True
+        
+        # Check for company/header information
+        company_indicators = [
+            'LIMITED', 'LTD', 'LLC', 'CORP', 'CORPORATION', 'INC',
+            'TECHNOLOGY', 'SOLUTIONS', 'SERVICES', 'GROUP',
+            'COMPANY', 'ANEXIAN'
+        ]
+        
+        # If most of the text is company/header info, skip it
+        company_matches = sum(1 for indicator in company_indicators if indicator in combined_text)
+        if company_matches > 0 and len(meaningful_fields) <= 2:
+            return True
+        
+        # Check for currency-only rows or incomplete data
+        currency_only = all(re.match(r'^[£$€]?[\d.,]+[£$€]?%?$', v) or len(v) <= 3 for v in meaningful_fields)
+        if currency_only and len(meaningful_fields) <= 3:
+            return True
+        
+        return False
+    
+    def extract_invoice_data(self, text: str) -> Dict[str, str]:
+        """
+        Extract common invoice fields from text using regex patterns.
+        
+        Args:
+            text: Extracted text from PDF
+            
+        Returns:
+            Dictionary with extracted invoice fields
+        """
+        invoice_data = {}
+        
+        # Common patterns for invoice data
+        patterns = {
+            'invoice_number': [
+                r'invoice\s*#?\s*:?\s*([A-Z0-9\-_]+)',
+                r'inv\s*#?\s*:?\s*([A-Z0-9\-_]+)',
+                r'invoice\s*number\s*:?\s*([A-Z0-9\-_]+)'
+            ],
+            'date': [
+                r'date\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
+                r'invoice\s*date\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
+                r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})'
+            ],
+            'total_amount': [
+                r'total\s*:?\s*\$?([0-9,]+\.?\d*)',
+                r'amount\s*due\s*:?\s*\$?([0-9,]+\.?\d*)',
+                r'grand\s*total\s*:?\s*\$?([0-9,]+\.?\d*)'
+            ],
+            'vendor': [
+                r'from\s*:?\s*([^\n]+)',
+                r'vendor\s*:?\s*([^\n]+)',
+                r'company\s*:?\s*([^\n]+)'
+            ]
+        }
+        
+        for field, pattern_list in patterns.items():
+            for pattern in pattern_list:
+                match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+                if match:
+                    invoice_data[field] = match.group(1).strip()
+                    break
+        
+        return invoice_data
 
 
 class ExcelExporter:
@@ -248,22 +579,52 @@ class ExcelExporter:
         
         # Data rows
         row = 2
+        total_items = 0
+        
         for data in all_data:
             if 'error' not in data:
-                for item in data.get('line_items', []):
+                line_items = data.get('line_items', [])
+                total_items += len(line_items)
+                
+                if line_items:
+                    for item in line_items:
+                        values = [
+                            data['filename'],
+                            item.get('description', ''),
+                            item.get('quantity', ''),
+                            item.get('unit_price', ''),
+                            item.get('amount', ''),
+                            item.get('source', '')
+                        ]
+                        
+                        for col, value in enumerate(values, 1):
+                            ws.cell(row=row, column=col, value=value)
+                        
+                        row += 1
+                else:
+                    # Add a row indicating no line items found for this file
                     values = [
                         data['filename'],
-                        item.get('description', ''),
-                        item.get('quantity', ''),
-                        item.get('unit_price', ''),
-                        item.get('amount', ''),
-                        item.get('source', '')
+                        'No line items detected in this file',
+                        '',
+                        '',
+                        '',
+                        'No tables with structured data found'
                     ]
                     
                     for col, value in enumerate(values, 1):
-                        ws.cell(row=row, column=col, value=value)
+                        cell = ws.cell(row=row, column=col, value=value)
+                        if col == 2:  # Description column
+                            cell.font = Font(italic=True)
                     
                     row += 1
+        
+        # Add summary if no items found at all
+        if total_items == 0:
+            ws.cell(row=row, column=1, value="No line items detected in any files")
+            ws.cell(row=row, column=2, value="The PDFs may not contain structured table data or may be image-based")
+            for col in range(1, 3):
+                ws.cell(row=row, column=col).font = Font(bold=True, italic=True)
         
         # Auto-adjust column widths
         for column in ws.columns:
@@ -271,31 +632,40 @@ class ExcelExporter:
             ws.column_dimensions[column[0].column_letter].width = min(max_length + 2, 50)
     
     def create_text_data_sheet(self, workbook: Workbook, all_data: List[Dict[str, Any]]) -> None:
-        """Create text data sheet with extracted text content."""
+        """Create a sheet with extracted text and parsed invoice data."""
         ws = workbook.create_sheet("Text Data")
         
-        # Headers
-        headers = ['Filename', 'Full Text (Preview)']
+        # Headers for structured data
+        headers = ['Filename', 'Invoice Number', 'Date', 'Vendor', 'Total Amount', 'Full Text']
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+            cell.fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
         
-        # Data rows
+        extractor = PDFDataExtractor()
+        
         for row, data in enumerate(all_data, 2):
-            if 'error' not in data:
-                text_preview = data.get('text', '')[:500] + '...' if len(data.get('text', '')) > 500 else data.get('text', '')
+            if 'error' not in data and data['text']:
+                invoice_data = extractor.extract_invoice_data(data['text'])
                 
-                values = [data['filename'], text_preview]
+                values = [
+                    data['filename'],
+                    invoice_data.get('invoice_number', ''),
+                    invoice_data.get('date', ''),
+                    invoice_data.get('vendor', ''),
+                    invoice_data.get('total_amount', ''),
+                    data['text'][:1000] + '...' if len(data['text']) > 1000 else data['text']
+                ]
                 
                 for col, value in enumerate(values, 1):
                     cell = ws.cell(row=row, column=col, value=value)
-                    if col == 2:  # Text column
+                    if col == 6:  # Full text column
                         cell.alignment = Alignment(wrap_text=True, vertical='top')
         
-        # Set column widths
-        ws.column_dimensions['A'].width = 30
-        ws.column_dimensions['B'].width = 80
+        # Auto-adjust column widths
+        for column in ws.columns:
+            max_length = max(len(str(cell.value)) for cell in column if cell.value)
+            ws.column_dimensions[column[0].column_letter].width = min(max_length + 2, 50)
     
     def create_tables_sheet(self, workbook: Workbook, all_data: List[Dict[str, Any]]) -> None:
         """Create tables sheet with detected table structures."""
