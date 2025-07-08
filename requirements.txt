@@ -2,3 +2,14 @@ pandas>=1.5.0
 pdfplumber>=0.7.0
 openpyxl>=3.0.0
 pathlib2>=2.3.0;python_version<"3.4" 
+
+# Web Application Dependencies
+Flask>=2.3.0
+Flask-SQLAlchemy>=3.0.0
+Flask-Login>=0.6.0
+Flask-WTF>=1.1.0
+WTForms>=3.0.0
+Werkzeug>=2.3.0
+
+# Desktop Application Dependencies (Streamlit)
+streamlit>=1.28.0 

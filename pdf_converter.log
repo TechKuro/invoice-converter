@@ -1,0 +1,23 @@
+2025-07-04 11:33:29,253 - __main__ - INFO - Found 7 PDF files to process
+2025-07-04 11:33:29,253 - __main__ - INFO - Processing 1/7: Invoice INV-19804.pdf
+2025-07-04 11:33:29,603 - __main__ - INFO - Processing 2/7: Invoice INV-19815.pdf
+2025-07-04 11:33:29,936 - __main__ - INFO - Processing 3/7: Invoice INV-19840.pdf
+2025-07-04 11:33:30,317 - __main__ - INFO - Processing 4/7: Invoice INV-19853.pdf
+2025-07-04 11:33:30,841 - __main__ - INFO - Processing 5/7: Invoice INV-19858.pdf
+2025-07-04 11:33:31,208 - __main__ - INFO - Processing 6/7: Invoice INV-19875.pdf
+2025-07-04 11:33:31,591 - __main__ - INFO - Processing 7/7: Invoice INV-19880.pdf
+2025-07-04 11:33:31,989 - __main__ - INFO - Exporting data to Excel: results.xlsx
+2025-07-04 11:33:32,068 - __main__ - ERROR - Error creating Excel file: [Errno 13] Permission denied: 'results.xlsx'
+2025-07-04 12:23:50,502 - __main__ - INFO - Found 7 PDF files to process
+2025-07-04 12:23:50,503 - __main__ - INFO - Processing 1/7: Invoice INV-19804.pdf
+2025-07-04 12:23:50,597 - __main__ - INFO - Processing 2/7: Invoice INV-19815.pdf
+2025-07-04 12:23:50,688 - __main__ - INFO - Processing 3/7: Invoice INV-19840.pdf
+2025-07-04 12:23:50,775 - __main__ - INFO - Processing 4/7: Invoice INV-19853.pdf
+2025-07-04 12:23:50,918 - __main__ - INFO - Processing 5/7: Invoice INV-19858.pdf
+2025-07-04 12:23:51,008 - __main__ - INFO - Processing 6/7: Invoice INV-19875.pdf
+2025-07-04 12:23:51,104 - __main__ - INFO - Processing 7/7: Invoice INV-19880.pdf
+2025-07-04 12:23:51,209 - __main__ - INFO - Exporting data to Excel: results.xlsx
+2025-07-04 12:23:51,268 - __main__ - INFO - Excel file saved: results.xlsx
+2025-07-04 12:23:51,270 - __main__ - INFO - Processing complete! 7/7 files processed successfully
+2025-07-04 12:23:51,270 - __main__ - INFO - Total line items extracted: 23
+2025-07-04 12:23:51,270 - __main__ - INFO - Results saved to: results.xlsx
