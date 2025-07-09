@@ -1,0 +1,56 @@
+.main-header {
+    padding: 1rem 0;
+    border-bottom: 2px solid #f0f2f6;
+    margin-bottom: 2rem;
+}
+.metric-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    color: white;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+}
+.metric-card h3 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: bold;
+}
+.metric-card p {
+    margin: 0.5rem 0 0 0;
+    opacity: 0.9;
+}
+.status-success { color: #28a745; font-weight: bold; }
+.status-processing { color: #ffc107; font-weight: bold; }
+.status-failed { color: #dc3545; font-weight: bold; }
+.status-pending { color: #6c757d; font-weight: bold; }
+.upload-area {
+    border: 2px dashed #cccccc;
+    border-radius: 10px;
+    padding: 2rem;
+    text-align: center;
+    background-color: #f8f9fa;
+    margin: 1rem 0;
+}
+.feature-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid #e9ecef;
+    margin-bottom: 1rem;
+}
+.feature-card h4 {
+    color: #495057;
+    margin-bottom: 0.5rem;
+}
+.stAlert > div {
+    border-radius: 0.5rem;
+}
+.upload-info {
+    background: #e7f3ff;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border-left: 4px solid #007bff;
+    margin: 1rem 0;
+} 

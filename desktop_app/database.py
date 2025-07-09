@@ -11,15 +11,16 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
-from encryption import (
+from .encryption import (
     encrypt_sensitive_field, 
     decrypt_sensitive_field, 
     is_encryption_enabled,
     ENCRYPTED_FIELDS
 )
+from .config import DATABASE_NAME
 
 # Database file path
-DB_PATH = Path(__file__).parent / "pdf_converter.db"
+DB_PATH = Path(__file__).parent / DATABASE_NAME
 
 def get_db_connection():
     """Create a standard SQLite database connection"""
@@ -152,7 +153,7 @@ def init_database():
     # Create default admin user if no users exist
     cursor.execute("SELECT COUNT(*) FROM user")
     if cursor.fetchone()[0] == 0:
-        from auth import hash_password
+        from .auth import hash_password
         admin_password_hash = hash_password("admin123")
         cursor.execute("""
             INSERT INTO user (username, email, password_hash)

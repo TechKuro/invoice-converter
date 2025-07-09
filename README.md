@@ -61,17 +61,24 @@ python pdf_to_excel_converter.py --input-dir ./pdfs --output-file results.xlsx
 
 ## 📁 Project Structure
 
+The application is now organized into a more modular and maintainable structure:
+
 ```
 pdf_invoice_converter/
 ├── desktop_app/              # Streamlit desktop application
-│   ├── main.py              # Main Streamlit app
+│   ├── ui/                  # UI components for each page
+│   │   ├── dashboard_page.py
+│   │   └── ...
+│   ├── services.py          # Business logic (e.g., file processing)
+│   ├── utils.py             # Helper functions
+│   ├── config.py            # Centralized configuration
+│   ├── main.py              # Main Streamlit app runner
 │   ├── database.py          # Database operations
 │   ├── auth.py              # User authentication
-│   └── run_app.py           # Launch script
+│   └── style.css            # Custom CSS
 ├── pdf_to_excel_converter.py # Core PDF processing engine
 ├── requirements.txt          # Dependencies
-├── run_desktop_app.bat      # Windows launcher for desktop app
-└── run_converter.bat        # Windows launcher for CLI tool
+└── launch_app.py             # Main launcher script
 ```
 
 ## 🔧 Installation
@@ -112,9 +119,9 @@ The desktop app uses SQLite to store:
 
 Database file: `desktop_app/pdf_converter.db`
 
-## 🔐 Database Encryption (NEW!)
+### 🔐 Field-Level Encryption
 
-Your sensitive data is protected with **AES-256 encryption**:
+Your sensitive data is protected with **AES-256 field-level encryption**:
 
 **Setup Encryption:**
 ```bash
@@ -122,15 +129,14 @@ python setup_encryption.py
 ```
 
 **Features:**
-- ✅ **Complete database encryption** - All invoice data, line items, and user info
-- ✅ **Automatic migration** - Existing data is safely converted
-- ✅ **Transparent operation** - No changes to your workflow
-- ✅ **Strong security** - Military-grade AES-256 encryption
+- ✅ **Targeted encryption** - Encrypts only sensitive fields like invoice data and user emails.
+- ✅ **Automatic migration** - Existing data is safely converted.
+- ✅ **Transparent operation** - No changes to your workflow.
+- ✅ **Strong security** - Military-grade AES-256 encryption.
 
 **Important:** 
-- Backup your encryption key (`desktop_app/.db_key`) immediately
-- Without the key, your data cannot be recovered
-- See [ENCRYPTION_SETUP.md](ENCRYPTION_SETUP.md) for detailed instructions
+- Backup your encryption key (`desktop_app/.field_encryption_key`) and salt (`desktop_app/.encryption_salt`) immediately.
+- Without these, your data cannot be recovered.
 
 ## 🎯 Output Structure
 
@@ -184,9 +190,11 @@ Options:
 ## 🎨 Customization
 
 **Desktop App:**
-- Modify UI in `desktop_app/main.py`
-- Update database schema in `desktop_app/database.py`
-- Customize authentication in `desktop_app/auth.py`
+- Modify UI components in `desktop_app/ui/`
+- Update business logic in `desktop_app/services.py`
+- Change application settings in `desktop_app/config.py`
+- Customize database schema in `desktop_app/database.py`
+- Extend authentication in `desktop_app/auth.py`
 
 **Processing Engine:**
 - Add extraction patterns in `pdf_to_excel_converter.py`

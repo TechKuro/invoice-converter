@@ -8,8 +8,8 @@ Handles user authentication and password management with field encryption.
 import hashlib
 import secrets
 from pathlib import Path
-from database import get_db_connection, decrypt_result_row
-from encryption import encrypt_sensitive_field, decrypt_sensitive_field, is_encryption_enabled
+from .database import get_db_connection, decrypt_result_row
+from .encryption import encrypt_sensitive_field, decrypt_sensitive_field, is_encryption_enabled
 
 def hash_password(password):
     """Hash a password using SHA-256 with salt (simple implementation)"""

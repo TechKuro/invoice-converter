@@ -59,6 +59,7 @@ def test_encryption():
             is_encryption_enabled
         )
         from desktop_app.database import init_database, get_db_connection
+        from desktop_app.config import DATABASE_NAME
         
         # Initialize database
         print("Initializing database...")
@@ -92,7 +93,7 @@ def test_encryption():
         conn.close()
         
         print(f"✓ Database connection test successful!")
-        print(f"✓ Database location: desktop_app/pdf_converter.db")
+        print(f"✓ Database location: desktop_app/{DATABASE_NAME}")
         print(f"✓ Field encryption enabled: {is_encryption_enabled()}")
         print(f"✓ Encryption key file: desktop_app/.field_encryption_key")
         

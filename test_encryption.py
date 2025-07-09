@@ -7,11 +7,15 @@ Run this script to quickly check that your data encryption is working properly.
 """
 
 import sys
+import os
 from pathlib import Path
 
-# Add current directory and desktop_app to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).parent / "desktop_app"))
+# Add the project root to Python path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+# Change to the project directory to ensure relative imports work
+os.chdir(project_root)
 
 def test_encryption():
     """Test basic encryption functionality"""
@@ -50,6 +54,8 @@ def test_encryption():
             
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def test_database():
@@ -84,6 +90,8 @@ def test_database():
             
     except Exception as e:
         print(f"❌ Database test error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def check_security():
