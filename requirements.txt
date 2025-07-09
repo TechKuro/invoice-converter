@@ -3,6 +3,9 @@ pdfplumber>=0.7.0
 openpyxl>=3.0.0
 pathlib2>=2.3.0;python_version<"3.4" 
 
+# Database Encryption (Cross-platform)
+cryptography>=3.4.0
+
 # Web Application Dependencies
 Flask>=2.3.0
 Flask-SQLAlchemy>=3.0.0

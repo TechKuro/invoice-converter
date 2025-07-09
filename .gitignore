@@ -3,4 +3,31 @@
 
 # Keep pdfs folder structure but ignore its contents
 pdfs/*
-!pdfs/.gitkeep 
+!pdfs/.gitkeep
+
+# Security - Field-level encryption
+desktop_app/.field_encryption_key
+desktop_app/.encryption_salt
+
+# Python cache and logs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.log
+
+# Virtual environments
+venv/
+env/
+.env
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db 

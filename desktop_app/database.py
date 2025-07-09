@@ -2,7 +2,7 @@
 Database module for PDF Invoice Converter Desktop App
 ====================================================
 
-Handles all database operations using SQLite for local storage.
+Handles all database operations with field-level encryption for sensitive data.
 """
 
 import sqlite3
@@ -11,12 +11,66 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
+from encryption import (
+    encrypt_sensitive_field, 
+    decrypt_sensitive_field, 
+    is_encryption_enabled,
+    ENCRYPTED_FIELDS
+)
+
 # Database file path
 DB_PATH = Path(__file__).parent / "pdf_converter.db"
 
+def get_db_connection():
+    """Create a standard SQLite database connection"""
+    return sqlite3.connect(DB_PATH)
+
+def decrypt_result_row(table_name, row_data):
+    """Decrypt sensitive fields in a database result row"""
+    if not is_encryption_enabled() or not row_data:
+        return row_data
+    
+    # Convert to list for modification
+    row_list = list(row_data)
+    
+    # Get column names for the table (simplified approach)
+    if table_name in ENCRYPTED_FIELDS:
+        # This is a simplified approach - in a real implementation you'd want
+        # to map column positions to field names properly
+        for field in ENCRYPTED_FIELDS[table_name]:
+            # For now, decrypt specific known columns based on table structure
+            if table_name == 'processed_file':
+                # filename(1), file_path(2) 
+                if field == 'filename' and len(row_list) > 1:
+                    row_list[1] = decrypt_sensitive_field(row_list[1])
+                elif field == 'file_path' and len(row_list) > 2:
+                    row_list[2] = decrypt_sensitive_field(row_list[2])
+            elif table_name == 'line_item':
+                # description(1), unit_price(3), amount(4)
+                if field == 'description' and len(row_list) > 1:
+                    row_list[1] = decrypt_sensitive_field(row_list[1])
+                elif field == 'unit_price' and len(row_list) > 3:
+                    row_list[3] = decrypt_sensitive_field(row_list[3])
+                elif field == 'amount' and len(row_list) > 4:
+                    row_list[4] = decrypt_sensitive_field(row_list[4])
+            elif table_name == 'invoice_data':
+                # invoice_number(1), vendor(3), total_amount(4)
+                if field == 'invoice_number' and len(row_list) > 1:
+                    row_list[1] = decrypt_sensitive_field(row_list[1])
+                elif field == 'vendor' and len(row_list) > 3:
+                    row_list[3] = decrypt_sensitive_field(row_list[3])
+                elif field == 'total_amount' and len(row_list) > 4:
+                    row_list[4] = decrypt_sensitive_field(row_list[4])
+            elif table_name == 'user':
+                # email(2)
+                if field == 'email' and len(row_list) > 2:
+                    row_list[2] = decrypt_sensitive_field(row_list[2])
+    
+    return tuple(row_list)
+
 def init_database():
     """Initialize the database with required tables"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Users table
@@ -110,7 +164,7 @@ def init_database():
 
 def get_user_stats(user_id):
     """Get user statistics"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Total sessions
@@ -157,7 +211,7 @@ def get_user_stats(user_id):
 
 def get_recent_sessions(user_id, limit=10):
     """Get recent upload sessions for user"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     query = """
         SELECT session_id, status, created_at, total_files, processed_files, output_file
         FROM upload_session 
@@ -171,7 +225,7 @@ def get_recent_sessions(user_id, limit=10):
 
 def get_all_user_sessions(user_id):
     """Get all sessions for user"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     query = """
         SELECT * FROM upload_session 
         WHERE user_id = ? 
@@ -185,7 +239,7 @@ def create_upload_session(user_id, total_files):
     """Create a new upload session"""
     session_id = str(uuid.uuid4())
     
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -201,12 +255,16 @@ def create_upload_session(user_id, total_files):
 
 def add_processed_file(session_id, filename, file_path, extracted_data):
     """Add a processed file record with extracted data"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Get session database ID
     cursor.execute("SELECT id FROM upload_session WHERE session_id = ?", (session_id,))
     session_db_id = cursor.fetchone()[0]
+    
+    # Encrypt sensitive file data
+    encrypted_filename = encrypt_sensitive_field(filename) if is_encryption_enabled() else filename
+    encrypted_file_path = encrypt_sensitive_field(file_path) if is_encryption_enabled() else file_path
     
     # Insert processed file record
     cursor.execute("""
@@ -215,8 +273,8 @@ def add_processed_file(session_id, filename, file_path, extracted_data):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         session_db_id,
-        filename,
-        file_path,
+        encrypted_filename,
+        encrypted_file_path,
         'completed',
         extracted_data.get('metadata', {}).get('pages', 0),
         len(extracted_data.get('tables', [])),
@@ -226,20 +284,45 @@ def add_processed_file(session_id, filename, file_path, extracted_data):
     
     file_db_id = cursor.lastrowid
     
-    # Store line items
+    # Store line items with encryption
     for item in extracted_data.get('line_items', []):
+        encrypted_description = encrypt_sensitive_field(item.get('description', '')) if is_encryption_enabled() else item.get('description', '')
+        encrypted_amount = encrypt_sensitive_field(item.get('amount')) if is_encryption_enabled() else item.get('amount')
+        encrypted_unit_price = encrypt_sensitive_field(item.get('unit_price')) if is_encryption_enabled() else item.get('unit_price')
+        
         cursor.execute("""
             INSERT INTO line_item 
             (processed_file_id, description, quantity, unit_price, amount, vat_rate, source, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             file_db_id,
-            item.get('description', ''),
+            encrypted_description,
             item.get('quantity'),
-            item.get('unit_price'),
-            item.get('amount'),
+            encrypted_unit_price,
+            encrypted_amount,
             item.get('vat_rate'),
             item.get('source', 'unknown'),
+            datetime.now()
+        ))
+    
+    # Store invoice data with encryption
+    invoice_data = extracted_data.get('invoice_data', {})
+    if invoice_data:
+        encrypted_invoice_number = encrypt_sensitive_field(invoice_data.get('invoice_number')) if is_encryption_enabled() else invoice_data.get('invoice_number')
+        encrypted_vendor = encrypt_sensitive_field(invoice_data.get('vendor')) if is_encryption_enabled() else invoice_data.get('vendor')
+        encrypted_total_amount = encrypt_sensitive_field(invoice_data.get('total_amount')) if is_encryption_enabled() else invoice_data.get('total_amount')
+        
+        cursor.execute("""
+            INSERT INTO invoice_data 
+            (processed_file_id, invoice_number, invoice_date, vendor, total_amount, currency, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            file_db_id,
+            encrypted_invoice_number,
+            invoice_data.get('invoice_date'),
+            encrypted_vendor,
+            encrypted_total_amount,
+            invoice_data.get('currency', 'USD'),
             datetime.now()
         ))
     
@@ -255,7 +338,7 @@ def add_processed_file(session_id, filename, file_path, extracted_data):
 
 def update_session_status(session_id, status, output_file=None):
     """Update session status and optionally set output file"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     if output_file:
@@ -276,7 +359,7 @@ def update_session_status(session_id, status, output_file=None):
 
 def get_user_by_id(user_id):
     """Get user information by ID"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT username, email, created_at FROM user WHERE id = ?", (user_id,))
     result = cursor.fetchone()
@@ -285,7 +368,7 @@ def get_user_by_id(user_id):
 
 def get_session_files(session_id):
     """Get all files for a session"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     query = """
         SELECT pf.* FROM processed_file pf
         JOIN upload_session us ON pf.upload_session_id = us.id

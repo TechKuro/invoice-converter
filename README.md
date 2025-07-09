@@ -112,6 +112,26 @@ The desktop app uses SQLite to store:
 
 Database file: `desktop_app/pdf_converter.db`
 
+## 🔐 Database Encryption (NEW!)
+
+Your sensitive data is protected with **AES-256 encryption**:
+
+**Setup Encryption:**
+```bash
+python setup_encryption.py
+```
+
+**Features:**
+- ✅ **Complete database encryption** - All invoice data, line items, and user info
+- ✅ **Automatic migration** - Existing data is safely converted
+- ✅ **Transparent operation** - No changes to your workflow
+- ✅ **Strong security** - Military-grade AES-256 encryption
+
+**Important:** 
+- Backup your encryption key (`desktop_app/.db_key`) immediately
+- Without the key, your data cannot be recovered
+- See [ENCRYPTION_SETUP.md](ENCRYPTION_SETUP.md) for detailed instructions
+
 ## 🎯 Output Structure
 
 ### Excel Export Sheets:

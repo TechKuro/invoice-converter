@@ -2,16 +2,14 @@
 Authentication module for PDF Invoice Converter Desktop App
 ===========================================================
 
-Handles user authentication and password management using bcrypt.
+Handles user authentication and password management with field encryption.
 """
 
-import sqlite3
 import hashlib
 import secrets
 from pathlib import Path
-
-# Database file path
-DB_PATH = Path(__file__).parent / "pdf_converter.db"
+from database import get_db_connection, decrypt_result_row
+from encryption import encrypt_sensitive_field, decrypt_sensitive_field, is_encryption_enabled
 
 def hash_password(password):
     """Hash a password using SHA-256 with salt (simple implementation)"""
@@ -30,7 +28,7 @@ def verify_password(password, password_hash):
 
 def authenticate_user(username, password):
     """Authenticate a user and return user info if successful"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -43,18 +41,20 @@ def authenticate_user(username, password):
     conn.close()
     
     if user and verify_password(password, user[3]):
+        # Decrypt email field
+        decrypted_user = decrypt_result_row('user', user)
         return {
-            'id': user[0],
-            'username': user[1],
-            'email': user[2],
-            'is_active': user[4]
+            'id': decrypted_user[0],
+            'username': decrypted_user[1],
+            'email': decrypted_user[2],
+            'is_active': decrypted_user[4]
         }
     
     return None
 
 def create_user(username, email, password):
     """Create a new user account"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Check if username already exists
@@ -63,20 +63,23 @@ def create_user(username, email, password):
         conn.close()
         return False, "Username already exists"
     
-    # Check if email already exists
-    cursor.execute("SELECT id FROM user WHERE email = ?", (email,))
+    # For email checking, we need to handle both encrypted and unencrypted emails
+    encrypted_email = encrypt_sensitive_field(email) if is_encryption_enabled() else email
+    
+    # Check if email already exists (check both encrypted and unencrypted forms)
+    cursor.execute("SELECT id FROM user WHERE email IN (?, ?)", (email, encrypted_email))
     if cursor.fetchone():
         conn.close()
         return False, "Email already exists"
     
-    # Create user
+    # Create user with encrypted email
     password_hash = hash_password(password)
     
     try:
         cursor.execute("""
             INSERT INTO user (username, email, password_hash)
             VALUES (?, ?, ?)
-        """, (username, email, password_hash))
+        """, (username, encrypted_email, password_hash))
         
         conn.commit()
         conn.close()
@@ -88,7 +91,7 @@ def create_user(username, email, password):
 
 def get_user_by_username(username):
     """Get user information by username"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -101,19 +104,21 @@ def get_user_by_username(username):
     conn.close()
     
     if user:
+        # Decrypt email field
+        decrypted_user = decrypt_result_row('user', user)
         return {
-            'id': user[0],
-            'username': user[1],
-            'email': user[2],
-            'created_at': user[3],
-            'is_active': user[4]
+            'id': decrypted_user[0],
+            'username': decrypted_user[1],
+            'email': decrypted_user[2],
+            'created_at': decrypted_user[3],
+            'is_active': decrypted_user[4]
         }
     
     return None
 
 def update_user_password(user_id, new_password):
     """Update user password"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     password_hash = hash_password(new_password)
@@ -135,7 +140,7 @@ def update_user_password(user_id, new_password):
 
 def deactivate_user(user_id):
     """Deactivate a user account"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
