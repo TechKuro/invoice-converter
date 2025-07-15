@@ -1,8 +1,12 @@
 import streamlit as st
 import pandas as pd
-from desktop_app.database import get_all_user_sessions
-from desktop_app.utils import format_status
-from desktop_app.config import PAGES
+from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+
+from database import get_all_user_sessions
+from utils import format_status
+from config import PAGES
 
 def show_sessions_page():
     """Display user's processing sessions"""
@@ -19,21 +23,29 @@ def show_sessions_page():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        status_filter = st.selectbox(
+        status_filter_raw = st.selectbox(
             "Filter by status:",
-            ['all', 'completed', 'processing', 'failed'],
+            ['All', 'completed', 'processing', 'failed'],
             format_func=lambda x: x.capitalize()
         )
+        # Convert to the format expected by the database function
+        status_filter = None if status_filter_raw == 'All' else status_filter_raw
     
     with col2:
-        date_filter = st.date_input("Filter by date (optional):", value=None)
+        date_filter_raw = st.selectbox(
+            "Filter by date:",
+            ['All time', 'Last 7 days', 'Last 30 days', 'Last 90 days']
+        )
+        # Use the string values expected by the database function
+        date_filter = date_filter_raw
     
     with col3:
-        sort_order = st.selectbox(
+        sort_order_raw = st.selectbox(
             "Sort by:",
-            ['created_at_desc', 'created_at_asc'],
-            format_func=lambda x: 'Newest First' if x == 'created_at_desc' else 'Oldest First'
+            ['Newest First', 'Oldest First']
         )
+        # Convert to the format expected by the database function
+        sort_order = 'desc' if sort_order_raw == 'Newest First' else 'asc'
     
     st.markdown("---")
     
@@ -41,28 +53,22 @@ def show_sessions_page():
     sessions_df = get_all_user_sessions(st.session_state.user_id, status_filter, date_filter, sort_order)
     
     if not sessions_df.empty:
-        # Format for display
-        sessions_df['Status'] = sessions_df['status'].apply(format_status)
-        sessions_df['Created'] = pd.to_datetime(sessions_df['created_at']).dt.strftime('%Y-%m-%d %H:%M')
-        sessions_df['Files'] = sessions_df['processed_files'].astype(str) + ' / ' + sessions_df['total_files'].astype(str)
+        # Create a copy to avoid modifying the original dataframe
+        display_df = sessions_df.copy()
         
-        display_df = sessions_df[['session_id', 'Files', 'Status', 'Created']]
-        display_df.columns = ['Session ID', 'Files Processed', 'Status', 'Date Created']
+        # Format for display - use simple text formatting for dataframes
+        display_df['Status'] = display_df['status'].apply(lambda x: x.capitalize())
+        display_df['Created'] = pd.to_datetime(display_df['created_at']).dt.strftime('%Y-%m-%d %H:%M')
+        display_df['Files'] = display_df['processed_files'].astype(str) + ' / ' + display_df['total_files'].astype(str)
         
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        # Select and rename columns for display
+        final_df = display_df[['session_id', 'Files', 'Status', 'Created']].copy()
+        final_df.columns = ['Session ID', 'Files Processed', 'Status', 'Date Created']
         
-        # Pagination (if many sessions)
-        # Note: Streamlit doesn't have a native pagination component, this is a simple implementation
-        page_size = 10
-        total_pages = (len(sessions_df) - 1) // page_size + 1
+        # Remove duplicates if any exist
+        final_df = final_df.drop_duplicates()
         
-        if total_pages > 1:
-            page = st.number_input("Page", min_value=1, max_value=total_pages, value=1)
-            start_idx = (page - 1) * page_size
-            end_idx = start_idx + page_size
-            st.dataframe(display_df.iloc[start_idx:end_idx], use_container_width=True, hide_index=True)
-        else:
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(final_df, use_container_width=True, hide_index=True)
             
     else:
         st.info("No sessions found matching your criteria.") 

@@ -12,23 +12,23 @@ import sys
 from pathlib import Path
 
 # Import our local PDF converter module
-from .pdf_converter import PDFDataExtractor, ExcelExporter
+from pdf_converter import PDFDataExtractor, ExcelExporter
 
 # Import authentication and database initialization
-from .auth import authenticate_user, create_user
-from .database import init_database, get_user_stats
+from auth import authenticate_user, create_user
+from database import init_database, get_user_stats
 
 # Import utility functions
-from .utils import load_css, check_authentication
+from utils import load_css, check_authentication
 
 # Import page-rendering functions
-from .ui.dashboard_page import show_dashboard
-from .ui.upload_page import show_upload_page
-from .ui.sessions_page import show_sessions_page
-from .ui.settings_page import show_settings_page
+from ui.dashboard_page import show_dashboard
+from ui.upload_page import show_upload_page
+from ui.sessions_page import show_sessions_page
+from ui.settings_page import show_settings_page
 
 # Import configuration
-from .config import APP_TITLE, PAGE_ICON, PAGES, APP_VERSION
+from config import APP_TITLE, PAGE_ICON, PAGES, APP_VERSION
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(
@@ -120,7 +120,7 @@ def show_sidebar():
 
 def main():
     """Main function to run the app."""
-    load_css("desktop_app/style.css")
+    load_css("style.css")
     init_database()
 
     if not check_authentication():

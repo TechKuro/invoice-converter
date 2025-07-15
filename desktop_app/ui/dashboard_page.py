@@ -1,8 +1,12 @@
 import streamlit as st
 import pandas as pd
-from desktop_app.database import get_user_stats, get_recent_sessions
-from desktop_app.utils import format_status
-from desktop_app.config import PAGES
+from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+
+from database import get_user_stats, get_recent_sessions
+from utils import format_status
+from config import PAGES
 
 def show_dashboard():
     """Display main dashboard"""
@@ -51,15 +55,19 @@ def show_dashboard():
     sessions_df = get_recent_sessions(st.session_state.user_id)
     
     if not sessions_df.empty:
-        # Format the dataframe for better display
-        sessions_df['Status'] = sessions_df['status'].apply(format_status)
-        sessions_df['Created'] = pd.to_datetime(sessions_df['created_at']).dt.strftime('%Y-%m-%d %H:%M')
-        sessions_df['Files'] = sessions_df['processed_files'].astype(str) + '/' + sessions_df['total_files'].astype(str)
+        # Create a copy to avoid modifying the original dataframe
+        display_df = sessions_df.copy()
         
-        display_df = sessions_df[['session_id', 'Files', 'Status', 'Created']].head(10)
-        display_df.columns = ['Session ID', 'Files', 'Status', 'Created']
+        # Format the dataframe for better display - use simple text formatting
+        display_df['Status'] = display_df['status'].apply(lambda x: x.capitalize())
+        display_df['Created'] = pd.to_datetime(display_df['created_at']).dt.strftime('%Y-%m-%d %H:%M')
+        display_df['Files'] = display_df['processed_files'].astype(str) + '/' + display_df['total_files'].astype(str)
         
-        st.dataframe(display_df, use_container_width=True)
+        # Select columns and limit to recent sessions
+        final_df = display_df[['session_id', 'Files', 'Status', 'Created']].head(10)
+        final_df.columns = ['Session ID', 'Files', 'Status', 'Created']
+        
+        st.dataframe(final_df, use_container_width=True)
         
         # Action buttons for recent sessions
         if st.button("🔄 Refresh", type="secondary"):

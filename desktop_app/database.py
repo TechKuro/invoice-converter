@@ -11,16 +11,16 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
-from .encryption import (
+from encryption import (
     encrypt_sensitive_field, 
     decrypt_sensitive_field, 
     is_encryption_enabled,
     ENCRYPTED_FIELDS
 )
-from .config import DATABASE_NAME
+from config import DATABASE_NAME
 
-# Database file path
-DB_PATH = Path(__file__).parent / DATABASE_NAME
+# Database file path - simplified to work when running from desktop_app directory
+DB_PATH = DATABASE_NAME
 
 def get_db_connection():
     """Create a standard SQLite database connection"""
@@ -224,15 +224,41 @@ def get_recent_sessions(user_id, limit=10):
     conn.close()
     return df
 
-def get_all_user_sessions(user_id):
-    """Get all sessions for user"""
+def get_all_user_sessions(user_id, status_filter=None, date_filter=None, sort_order='desc'):
+    """Get all sessions for user with optional filtering"""
     conn = get_db_connection()
-    query = """
-        SELECT * FROM upload_session 
-        WHERE user_id = ? 
-        ORDER BY created_at DESC
-    """
-    df = pd.read_sql_query(query, conn, params=(user_id,))
+    
+    query = "SELECT * FROM upload_session WHERE user_id = ?"
+    params = [user_id]
+    
+    # Add status filter if provided
+    if status_filter and status_filter != 'All':
+        query += " AND status = ?"
+        params.append(status_filter.lower())
+    
+    # Add date filter if provided
+    if date_filter and date_filter != 'All time':
+        from datetime import timedelta
+        if date_filter == 'Last 7 days':
+            date_threshold = datetime.now() - timedelta(days=7)
+        elif date_filter == 'Last 30 days':
+            date_threshold = datetime.now() - timedelta(days=30)
+        elif date_filter == 'Last 90 days':
+            date_threshold = datetime.now() - timedelta(days=90)
+        else:
+            date_threshold = None
+            
+        if date_threshold:
+            query += " AND created_at >= ?"
+            params.append(date_threshold)
+    
+    # Add sorting
+    if sort_order.lower() == 'asc':
+        query += " ORDER BY created_at ASC"
+    else:
+        query += " ORDER BY created_at DESC"
+    
+    df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
 
@@ -365,7 +391,15 @@ def get_user_by_id(user_id):
     cursor.execute("SELECT username, email, created_at FROM user WHERE id = ?", (user_id,))
     result = cursor.fetchone()
     conn.close()
-    return result
+    
+    if result:
+        # Return as dictionary for easier access
+        return {
+            'username': result[0],
+            'email': result[1], 
+            'created_at': result[2]
+        }
+    return None
 
 def get_session_files(session_id):
     """Get all files for a session"""

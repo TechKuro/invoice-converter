@@ -1,10 +1,14 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from ..auth import update_user_password, authenticate_user
-from ..database import get_user_by_id
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from auth import update_user_password, authenticate_user
+from database import get_user_by_id
 from datetime import datetime, timedelta
-from ..config import PAGES, DATABASE_NAME
+from config import PAGES, DATABASE_NAME
 
 def show_settings_page():
     """Display settings and user profile management page"""
@@ -63,7 +67,7 @@ def show_settings_page():
         with col1:
             if st.button("Clear Old Sessions (>30 days)", use_container_width=True, type="secondary"):
                 try:
-                    conn = sqlite3.connect(f"desktop_app/{DATABASE_NAME}")
+                    conn = sqlite3.connect(DATABASE_NAME)
                     cursor = conn.cursor()
                     
                     thirty_days_ago = datetime.now() - timedelta(days=30)

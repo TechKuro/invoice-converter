@@ -2,10 +2,11 @@ from pathlib import Path
 import uuid
 from datetime import datetime
 import sqlite3
-from desktop_app.pdf_converter import PDFDataExtractor, ExcelExporter
-from desktop_app.config import DATABASE_NAME
+from pdf_converter import PDFDataExtractor, ExcelExporter
+from config import DATABASE_NAME
 
 def process_uploaded_files(uploaded_files,
+                           user_id,
                            extract_tables=True,
                            extract_text=True,
                            verbose_logging=False,
@@ -18,13 +19,13 @@ def process_uploaded_files(uploaded_files,
     session_id = str(uuid.uuid4())
     
     try:
-        conn = sqlite3.connect(f"desktop_app/{DATABASE_NAME}")
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         cursor.execute("""
             INSERT INTO upload_session (session_id, user_id, status, created_at, total_files, processed_files)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (session_id, st.session_state.user_id, 'processing', datetime.now(), len(uploaded_files), 0))
+        """, (session_id, user_id, 'processing', datetime.now(), len(uploaded_files), 0))
         
         session_db_id = cursor.lastrowid
         
@@ -52,8 +53,10 @@ def process_uploaded_files(uploaded_files,
             file_db_id = cursor.lastrowid
             
             try:
-                data = extractor.extract_data(str(file_path))
-                all_data.extend(data)
+                data = extractor.extract_from_pdf(file_path)
+                # The extract_from_pdf method returns a dict, we need to convert it to a list
+                if data:
+                    all_data.append(data)
                 
                 cursor.execute("UPDATE processed_file SET status = ? WHERE id = ?", ('completed', file_db_id))
                 processed_count += 1
@@ -72,7 +75,10 @@ def process_uploaded_files(uploaded_files,
         if status_callback:
             status_callback("Processing complete! Generating Excel file...")
         
-        output_file = exporter.export_to_excel(all_data, f"results_{session_id[:8]}.xlsx")
+        output_filename = f"results_{session_id[:8]}.xlsx"
+        output_file_path = upload_dir / output_filename
+        exporter.export_to_excel(all_data, output_file_path)
+        output_file = str(output_file_path)
         
         cursor.execute("""
             UPDATE upload_session 

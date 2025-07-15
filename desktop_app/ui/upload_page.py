@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-from desktop_app.services import process_uploaded_files
-from desktop_app.config import PAGES
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+
+from services import process_uploaded_files
+from config import PAGES
 
 def show_upload_page():
     """Display enhanced file upload page"""
@@ -141,6 +144,7 @@ def show_upload_page():
                     with st.spinner("Processing files..."):
                         result = process_uploaded_files(
                             current_files, 
+                            st.session_state.user_id,
                             extract_tables, 
                             extract_text, 
                             verbose_logging,
