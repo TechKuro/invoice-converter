@@ -7,6 +7,7 @@ from config import DATABASE_NAME
 
 def process_uploaded_files(uploaded_files,
                            user_id,
+                           session_name=None,
                            extract_tables=True,
                            extract_text=True,
                            verbose_logging=False,
@@ -18,14 +19,22 @@ def process_uploaded_files(uploaded_files,
     """
     session_id = str(uuid.uuid4())
     
+    # Generate session name from first file if not provided
+    if not session_name and uploaded_files:
+        first_filename = uploaded_files[0].name
+        # Remove extension and clean up the name
+        session_name = Path(first_filename).stem
+        # Limit length and clean up
+        session_name = session_name[:50].replace('_', ' ').replace('-', ' ')
+    
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         cursor.execute("""
-            INSERT INTO upload_session (session_id, user_id, status, created_at, total_files, processed_files)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (session_id, user_id, 'processing', datetime.now(), len(uploaded_files), 0))
+            INSERT INTO upload_session (session_id, session_name, user_id, status, created_at, total_files, processed_files)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (session_id, session_name, user_id, 'processing', datetime.now(), len(uploaded_files), 0))
         
         session_db_id = cursor.lastrowid
         

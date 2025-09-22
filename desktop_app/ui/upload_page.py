@@ -67,6 +67,16 @@ def show_upload_page():
     
     st.markdown("---")
     
+    # Session naming
+    st.subheader("🏷️ Session Name (Optional)")
+    session_name = st.text_input(
+        "Give your processing session a friendly name:",
+        placeholder="e.g., 'Q3 Invoices', 'Client ABC Documents', etc.",
+        help="This will help you identify this session later. If left empty, it will use the name of the first uploaded file."
+    )
+    
+    st.markdown("---")
+    
     # File upload area with better design
     st.subheader("📁 Select Files")
     uploaded_files = st.file_uploader(
@@ -145,6 +155,7 @@ def show_upload_page():
                         result = process_uploaded_files(
                             current_files, 
                             st.session_state.user_id,
+                            session_name if session_name.strip() else None,
                             extract_tables, 
                             extract_text, 
                             verbose_logging,

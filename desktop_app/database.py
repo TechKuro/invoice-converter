@@ -91,6 +91,7 @@ def init_database():
         CREATE TABLE IF NOT EXISTS upload_session (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT UNIQUE NOT NULL,
+            session_name TEXT,
             user_id INTEGER NOT NULL,
             status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -101,6 +102,13 @@ def init_database():
             FOREIGN KEY (user_id) REFERENCES user (id)
         )
     """)
+    
+    # Add session_name column if it doesn't exist (for existing databases)
+    try:
+        cursor.execute("ALTER TABLE upload_session ADD COLUMN session_name TEXT")
+    except sqlite3.OperationalError:
+        # Column already exists, ignore
+        pass
     
     # Processed files table
     cursor.execute("""
@@ -214,7 +222,7 @@ def get_recent_sessions(user_id, limit=10):
     """Get recent upload sessions for user"""
     conn = get_db_connection()
     query = """
-        SELECT session_id, status, created_at, total_files, processed_files, output_file
+        SELECT session_id, session_name, status, created_at, total_files, processed_files, output_file
         FROM upload_session 
         WHERE user_id = ? 
         ORDER BY created_at DESC 
@@ -262,7 +270,7 @@ def get_all_user_sessions(user_id, status_filter=None, date_filter=None, sort_or
     conn.close()
     return df
 
-def create_upload_session(user_id, total_files):
+def create_upload_session(user_id, total_files, session_name=None):
     """Create a new upload session"""
     session_id = str(uuid.uuid4())
     
@@ -270,9 +278,9 @@ def create_upload_session(user_id, total_files):
     cursor = conn.cursor()
     
     cursor.execute("""
-        INSERT INTO upload_session (session_id, user_id, status, created_at, total_files, processed_files)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (session_id, user_id, 'processing', datetime.now(), total_files, 0))
+        INSERT INTO upload_session (session_id, session_name, user_id, status, created_at, total_files, processed_files)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (session_id, session_name, user_id, 'processing', datetime.now(), total_files, 0))
     
     session_db_id = cursor.lastrowid
     conn.commit()
@@ -384,6 +392,20 @@ def update_session_status(session_id, status, output_file=None):
     conn.commit()
     conn.close()
 
+def update_session_name(session_id, session_name):
+    """Update session name"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        UPDATE upload_session 
+        SET session_name = ?
+        WHERE session_id = ?
+    """, (session_name, session_id))
+    
+    conn.commit()
+    conn.close()
+
 def get_user_by_id(user_id):
     """Get user information by ID"""
     conn = get_db_connection()
@@ -425,9 +447,10 @@ class User:
         self.is_active = is_active
 
 class UploadSession:
-    def __init__(self, id, session_id, user_id, status, created_at, completed_at, total_files, processed_files, output_file):
+    def __init__(self, id, session_id, session_name, user_id, status, created_at, completed_at, total_files, processed_files, output_file):
         self.id = id
         self.session_id = session_id
+        self.session_name = session_name
         self.user_id = user_id
         self.status = status
         self.created_at = created_at

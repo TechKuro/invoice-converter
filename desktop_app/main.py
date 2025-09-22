@@ -90,7 +90,27 @@ def show_sidebar():
     with st.sidebar:
         st.markdown(f"### 👋 Welcome, **{st.session_state.username}**!")
         
-        page_name = st.selectbox("Navigate to:", list(PAGES.keys()), format_func=lambda name: f"{PAGES[name]['icon']} {name}")
+        # Check for page parameter in URL
+        page_param = st.query_params.get("page", "")
+        default_page = "Dashboard"
+        
+        # Map URL parameters to page names
+        page_mapping = {
+            "dashboard": "Dashboard",
+            "upload": "Upload PDFs", 
+            "sessions": "My Sessions",
+            "settings": "Settings"
+        }
+        
+        if page_param in page_mapping:
+            default_page = page_mapping[page_param]
+        
+        page_name = st.selectbox(
+            "Navigate to:", 
+            list(PAGES.keys()), 
+            format_func=lambda name: f"{PAGES[name]['icon']} {name}",
+            index=list(PAGES.keys()).index(default_page)
+        )
         
         st.markdown("---")
         
@@ -115,7 +135,7 @@ def show_sidebar():
         "My Sessions": show_sessions_page,
         "Settings": show_settings_page,
     }
-            
+        
     return page_functions[page_name]
 
 def main():
